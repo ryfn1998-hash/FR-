@@ -3,74 +3,114 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MULTI-TOUCH QUANTUM FIELD</title>
+    <title>GRAVITY QUANTUM CORE</title>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; touch-action: none; }
-        canvas { display: block; filter: contrast(1.2) bloom(1.5); }
-        
-        /* 電影感 HUD 文字 */
-        #hud {
-            position: fixed; top: 20px; left: 20px;
-            color: #00f3ff; font-family: 'Courier New', monospace;
-            font-size: 10px; pointer-events: none; letter-spacing: 2px;
-            text-shadow: 0 0 5px #00f3ff;
+        body { margin: 0; background: #000; overflow: hidden; touch-action: none; cursor: crosshair; }
+        canvas { display: block; }
+        #overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; justify-content: center; align-items: center;
+            background: rgba(0,0,0,0.8); color: #00f3ff;
+            font-family: 'Courier New', monospace; letter-spacing: 5px;
+            z-index: 100; cursor: pointer; text-align: center; padding: 20px;
         }
     </style>
 </head>
 <body>
 
-<div id="hud">SYSTEM: MULTI-TOUCH ACTIVE // PARTICLES: 15,000</div>
+<div id="overlay">点击以启动重力系统<br>[ INITIALIZE GYRO ]</div>
 <canvas id="canvas"></canvas>
 
 <script>
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
+    const overlay = document.getElementById('overlay');
     let width, height;
     let particles = [];
-    let touches = []; // 存儲多個觸控點
+    let isPressing = false;
+    let mouse = { x: -1000, y: -1000 };
+    
+    // 重力向量
+    let gravity = { x: 0, y: 0.5 }; // 預設向下
 
-    const PARTICLE_COUNT = 15000; // 粒子數量
-    const COLORS = ['#00f3ff', '#0077ff', '#ffffff', '#5500ff'];
+    const MAX_PARTICLES = 3000; 
+    const COLORS = ['#00f3ff', '#00ffaa', '#ffffff', '#0044ff'];
 
     class Particle {
-        constructor() {
-            this.init();
-        }
-        init() {
-            this.x = Math.random() * width;
-            this.y = Math.random() * height;
-            this.vx = (Math.random() - 0.5) * 2;
-            this.vy = (Math.random() - 0.5) * 2;
-            this.size = Math.random() * 1.5 + 0.5;
+        constructor(x, y, isBurst = false) {
+            this.x = x;
+            this.y = y;
+            const angle = Math.random() * Math.PI * 2;
+            const force = isBurst ? Math.random() * 15 + 5 : Math.random() * 2;
+            this.vx = Math.cos(angle) * force;
+            this.vy = Math.sin(angle) * force;
+            this.size = Math.random() * 2.5 + 0.5;
             this.color = COLORS[Math.floor(Math.random() * COLORS.length)];
-            this.accel = 0.05;
+            this.life = 1.0;
+            this.decay = Math.random() * 0.01 + 0.002;
+            this.friction = 0.98;
         }
-        update() {
-            // 對於每一個觸控點產生引力
-            touches.forEach(t => {
-                const dx = t.x - this.x;
-                const dy = t.y - this.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < 300) {
-                    const force = (300 - dist) / 300;
-                    this.vx += (dx / dist) * force * 0.8;
-                    this.vy += (dy / dist) * force * 0.8;
-                }
-            });
 
-            this.vx *= 0.95; // 阻尼
-            this.vy *= 0.95;
+        update() {
+            // 1. 受手指吸引力
+            if (isPressing) {
+                const dx = mouse.x - this.x;
+                const dy = mouse.y - this.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 400) {
+                    const attract = 0.5;
+                    this.vx += (dx / dist) * attract;
+                    this.vy += (dy / dist) * attract;
+                    this.friction = 0.92; // 吸引時增加粘滯感
+                }
+            } else {
+                this.friction = 0.98;
+            }
+
+            // 2. 受陀螺儀重力影響
+            this.vx += gravity.x;
+            this.vy += gravity.y;
+
+            this.vx *= this.friction;
+            this.vy *= this.friction;
             this.x += this.vx;
             this.y += this.vy;
 
-            // 邊界回彈
-            if (this.x < 0 || this.x > width) this.vx *= -1;
-            if (this.y < 0 || this.y > height) this.vy *= -1;
+            // 3. 邊界碰撞 (模擬實體盒子感)
+            if (this.x > width) { this.x = width; this.vx *= -0.5; }
+            if (this.x < 0) { this.x = 0; this.vx *= -0.5; }
+            if (this.y > height) { this.y = height; this.vy *= -0.5; }
+            if (this.y < 0) { this.y = 0; this.vy *= -0.5; }
+
+            this.life -= this.decay;
         }
+
         draw() {
             ctx.fillStyle = this.color;
+            ctx.globalAlpha = this.life;
             ctx.fillRect(this.x, this.y, this.size, this.size);
         }
+    }
+
+    // 啟動重力感應
+    async function initGravity() {
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            const permission = await DeviceOrientationEvent.requestPermission();
+            if (permission === 'granted') {
+                window.addEventListener('deviceorientation', handleOrientation);
+            }
+        } else {
+            window.addEventListener('deviceorientation', handleOrientation);
+        }
+        overlay.style.display = 'none';
+        animate();
+    }
+
+    function handleOrientation(event) {
+        // 將傾斜角度轉換為重力向量
+        // gamma: 左右傾斜 (-90 to 90), beta: 前後傾斜 (-180 to 180)
+        gravity.x = event.gamma * 0.05;
+        gravity.y = event.beta * 0.05;
     }
 
     function resize() {
@@ -78,52 +118,48 @@
         height = canvas.height = window.innerHeight;
     }
 
-    function createParticles() {
-        particles = [];
-        for (let i = 0; i < PARTICLE_COUNT; i++) {
-            particles.push(new Particle());
+    function spawn(x, y, count, burst) {
+        for (let i = 0; i < count; i++) {
+            if (particles.length < MAX_PARTICLES) particles.push(new Particle(x, y, burst));
         }
     }
 
-    // 觸控與震動邏輯
-    function handleTouches(e) {
-        e.preventDefault();
-        const rect = canvas.getBoundingClientRect();
-        touches = Array.from(e.touches).map(t => ({
-            x: t.clientX - rect.left,
-            y: t.clientY - rect.top
-        }));
-        
-        // 每當多點觸控發生，產生強烈脈衝震動
-        if (navigator.vibrate && touches.length > 0) {
-            navigator.vibrate(15); 
-        }
-    }
+    // 交互事件
+    const start = (e) => {
+        isPressing = true;
+        const pos = e.touches ? e.touches[0] : e;
+        mouse.x = pos.clientX;
+        mouse.y = pos.clientY;
+        spawn(mouse.x, mouse.y, 80, true);
+        if (navigator.vibrate) navigator.vibrate([20, 10, 20]);
+    };
 
-    window.addEventListener('touchstart', handleTouches);
-    window.addEventListener('touchmove', handleTouches);
-    window.addEventListener('touchend', (e) => touches = []); // 手指離開，力場消失
+    overlay.addEventListener('click', initGravity);
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('touchstart', start);
+    window.addEventListener('touchmove', (e) => {
+        const pos = e.touches[0];
+        mouse.x = pos.clientX;
+        mouse.y = pos.clientY;
+        spawn(mouse.x, mouse.y, 2, false);
+    });
+    window.addEventListener('touchend', () => isPressing = false);
+    window.addEventListener('mouseup', () => isPressing = false);
 
     function animate() {
-        // 殘影效果：這就是「高質感漸層光波」的秘密
         ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
         ctx.fillRect(0, 0, width, height);
 
-        particles.forEach(p => {
-            p.update();
-            p.draw();
-        });
+        for (let i = particles.length - 1; i >= 0; i--) {
+            particles[i].update();
+            particles[i].draw();
+            if (particles[i].life <= 0) particles.splice(i, 1);
+        }
         requestAnimationFrame(animate);
     }
 
-    window.addEventListener('resize', () => {
-        resize();
-        createParticles();
-    });
-
+    window.addEventListener('resize', resize);
     resize();
-    createParticles();
-    animate();
 </script>
 </body>
 </html>
