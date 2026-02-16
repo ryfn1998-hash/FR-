@@ -3,104 +3,133 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HAPTIC QUANTUM INTERFACE</title>
+    <title>ULTRA-TECH INITIALIZATION</title>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; touch-action: none; font-family: sans-serif; }
+        body { margin: 0; background: #000; overflow: hidden; touch-action: none; font-family: 'Courier New', monospace; }
         canvas { display: block; }
         
-        /* 觸發時的螢幕紅光警告特效 */
-        #glitch-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: radial-gradient(circle, rgba(255,0,0,0.15) 0%, transparent 70%);
-            opacity: 0; pointer-events: none; z-index: 10;
+        /* 啟動提示 */
+        #boot-hint {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #00f3ff; letter-spacing: 8px; font-size: 12px;
+            opacity: 0.4; pointer-events: none; animation: pulse 2s infinite;
         }
+        @keyframes pulse { 0%, 100% { opacity: 0.1; } 50% { opacity: 0.5; } }
 
-        .instruction {
-            position: fixed; top: 20px; width: 100%; text-align: center;
-            color: rgba(0, 255, 255, 0.5); letter-spacing: 3px; font-size: 12px;
+        /* 螢幕震動與濾鏡特效 */
+        .shake { animation: screen-shake 0.2s cubic-bezier(.36,.07,.19,.97) both; }
+        @keyframes screen-shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
         }
     </style>
 </head>
 <body>
 
-<div id="glitch-overlay"></div>
-<div class="instruction">TOUCH TO ENGAGE HAPTIC ENGINE</div>
+<div id="boot-hint">TOUCH TO INITIALIZE CORE</div>
+<div id="app"></div>
 
 <script type="module">
     import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
 
-    let scene, camera, renderer, particles, clock;
-    const overlay = document.getElementById('glitch-overlay');
+    let scene, camera, renderer, material, mesh;
+    const hint = document.getElementById('boot-hint');
 
-    init();
-    animate();
+    // 極致震撼的「量子光波」著色器
+    const vertexShader = `
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = vec4(position, 1.0); }
+    `;
+
+    const fragmentShader = `
+        precision highp float;
+        uniform float iTime;
+        uniform vec2 iResolution;
+        uniform vec2 iMouse;
+        uniform float iImpact; // 衝擊波強度
+        varying vec2 vUv;
+
+        void main() {
+            vec2 uv = (gl_FragCoord.xy - 0.5 * iResolution.xy) / min(iResolution.y, iResolution.x);
+            vec2 m = (iMouse.xy - 0.5 * iResolution.xy) / min(iResolution.y, iResolution.x);
+            
+            float dist = length(uv - m);
+            
+            // 漸層光波計算
+            float wave = sin(dist * 20.0 - iTime * 5.0 + iImpact) * 0.5 + 0.5;
+            float strength = iImpact / (dist * 10.0 + 1.0);
+            
+            vec3 color1 = vec3(0.0, 0.95, 1.0); // 電信藍
+            vec3 color2 = vec3(0.5, 0.0, 1.0); // 神秘紫
+            vec3 finalColor = mix(color1, color2, wave) * strength;
+            
+            // 加入掃描線感
+            finalColor *= 0.8 + 0.2 * sin(gl_FragCoord.y * 1.5);
+            
+            gl_FragColor = vec4(finalColor, iImpact);
+        }
+    `;
 
     function init() {
         scene = new THREE.Scene();
-        camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-        camera.position.z = 5;
-
+        camera = new THREE.Camera();
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+        document.getElementById('app').appendChild(renderer.domElement);
 
-        // 創建動態力場粒子
-        const geo = new THREE.BufferGeometry();
-        const pos = [];
-        for(let i=0; i<5000; i++) {
-            pos.push((Math.random()-0.5)*10, (Math.random()-0.5)*10, (Math.random()-0.5)*10);
-        }
-        geo.setAttribute('position', new THREE.Float32Attribute(pos, 3));
-        const mat = new THREE.PointsMaterial({ color: 0x00ffff, size: 0.02, transparent: true, blending: THREE.AdditiveBlending });
-        particles = new THREE.Points(geo, mat);
-        scene.add(particles);
+        const geometry = new THREE.PlaneGeometry(2, 2);
+        material = new THREE.ShaderMaterial({
+            uniforms: {
+                iTime: { value: 0 },
+                iResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+                iMouse: { value: new THREE.Vector2(-1000, -1000) },
+                iImpact: { value: 0.0 }
+            },
+            vertexShader,
+            fragmentShader,
+            transparent: true
+        });
 
-        clock = new THREE.Clock();
+        mesh = new THREE.Mesh(geometry, material);
+        scene.add(mesh);
 
-        // --- 核心觸覺交互代碼 ---
-        window.addEventListener('touchstart', handleTouch, { passive: false });
-        window.addEventListener('mousedown', (e) => triggerHaptic(200)); 
+        // 監聽啟動
+        window.addEventListener('touchstart', (e) => triggerImpact(e.touches[0].clientX, e.touches[0].clientY), false);
+        window.addEventListener('mousedown', (e) => triggerImpact(e.clientX, e.clientY), false);
     }
 
-    function handleTouch(e) {
-        e.preventDefault();
-        // 1. 調用設備震動 (雙重震動模擬物理碰撞)
+    function triggerImpact(x, y) {
+        // 1. 隱藏提示
+        hint.style.display = 'none';
+
+        // 2. 物理反饋：觸覺震動 (震撼感核心)
         if (navigator.vibrate) {
-            navigator.vibrate([30, 50, 30]); 
+            // 模擬強烈電力脈衝震動：強-停-弱
+            navigator.vibrate([100, 30, 200, 50, 50]);
         }
-        
-        // 2. 視覺反饋：螢幕抖動
-        shakeScreen();
-        
-        // 3. 視覺反饋：紅光閃爍
-        overlay.style.opacity = '1';
-        setTimeout(() => overlay.style.opacity = '0', 150);
+
+        // 3. 視覺反饋：位置與衝擊
+        material.uniforms.iMouse.value.set(x, window.innerHeight - y);
+        material.uniforms.iImpact.value = 5.0; // 瞬間最大能量
+
+        // 4. 電影感：螢幕抖動
+        document.body.classList.add('shake');
+        setTimeout(() => document.body.classList.remove('shake'), 200);
     }
 
-    function triggerHaptic(ms) {
-        if (navigator.vibrate) navigator.vibrate(ms);
-        shakeScreen();
-    }
-
-    function shakeScreen() {
-        const intensity = 5;
-        const x = (Math.random() - 0.5) * intensity;
-        const y = (Math.random() - 0.5) * intensity;
-        renderer.domElement.style.transform = `translate(${x}px, ${y}px)`;
-        setTimeout(() => renderer.domElement.style.transform = 'translate(0,0)', 50);
-    }
-
-    function animate() {
-        requestAnimationFrame(animate);
-        const t = clock.getElapsedTime();
-        particles.rotation.y = t * 0.1;
-        particles.rotation.x = t * 0.05;
-        
-        // 粒子隨時間產生呼吸感
-        particles.material.size = 0.02 + Math.sin(t*5) * 0.01;
+    function animate(time) {
+        material.uniforms.iTime.value = time * 0.001;
+        // 能量隨時間衰減，達成緩緩消失的效果
+        material.uniforms.iImpact.value *= 0.95; 
         
         renderer.render(scene, camera);
+        requestAnimationFrame(animate);
     }
+
+    init();
+    animate(0);
 </script>
 </body>
 </html>
