@@ -1,190 +1,170 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ULTIMATE QUANTUM CORE</title>
+    <title>FR 先鋒科技 - 量子百萬粒子系統</title>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; touch-action: none; font-family: 'Segoe UI', sans-serif; }
-        canvas { display: block; }
+        :root { --neon: #bc13fe; --cyan: #00f3ff; }
+        * { margin: 0; padding: 0; box-sizing: border-box; overflow: hidden; touch-action: none; background: #000; }
         
-        /* 初始啟動層 */
-        #boot-layer {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            display: flex; justify-content: center; align-items: center;
-            background: #000; color: #00f3ff; z-index: 100; cursor: pointer;
-            letter-spacing: 10px; font-weight: 100; transition: opacity 1s;
+        /* 頂級邊框：增加光流感 */
+        body::after {
+            content: ''; position: fixed; inset: 0; border: 2px solid transparent;
+            border-image: conic-gradient(from var(--angle), var(--cyan), var(--neon), #fff, var(--neon), var(--cyan)) 1;
+            z-index: 100; pointer-events: none;
+            filter: drop-shadow(0 0 10px var(--neon));
+            animation: rotateGradient 1.5s linear infinite;
         }
+        @property --angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+        @keyframes rotateGradient { to { --angle: 360deg; } }
 
-        #hud {
-            position: fixed; top: 20px; left: 20px; color: rgba(0, 243, 255, 0.4);
-            font-family: monospace; font-size: 10px; pointer-events: none;
-            letter-spacing: 1px; z-index: 50;
-        }
-
-        /* 閃爍效果 */
-        .scanline {
-            width: 100%; height: 100%; position: absolute; top: 0; left: 0;
-            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.2) 50%),
-                        linear-gradient(90deg, rgba(255, 0, 0, 0.05), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.05));
-            background-size: 100% 4px, 3px 100%; pointer-events: none; z-index: 10;
+        #overlay {
+            position: fixed; top: 20px; left: 20px; z-index: 200;
+            color: #fff; font-family: 'Segoe UI', sans-serif;
+            font-size: 10px; letter-spacing: 2px; opacity: 0.6; pointer-events: none;
         }
     </style>
 </head>
 <body>
+    <div id="overlay">FR_TECH_SYSTEM: 200,000_PARTICLES // GPU_ACCELERATED</div>
+    <div id="container"></div>
 
-<div id="boot-layer">INITIALIZE CORE</div>
-<div id="hud">SYSTEM: ONLINE // PARTICLES: 100,000 // FORCE: MULTI-TOUCH</div>
-<div class="scanline"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
-<script type="module">
-    import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
+    <script>
+        let scene, camera, renderer, geometry, material, points;
+        let particleCount = 200000; // 預設 20 萬，可改為 1000000
+        let mouse = new THREE.Vector2(-1000, -1000);
+        let targetMouse = new THREE.Vector2(-1000, -1000);
+        let isPressing = false;
 
-    let scene, camera, renderer, points, geometry;
-    const particleCount = 100000; // 十萬顆粒子，挑戰極限
-    let positions, velocities, colors;
-    let isPressing = false;
-    let touches = [];
+        // --- Shader 程式碼：這是萬級粒子流暢的關鍵 ---
+        const _VS = `
+            uniform float uTime;
+            uniform vec2 uMouse;
+            uniform float uPress;
+            attribute float aSize;
+            attribute vec3 aVelocity;
+            varying vec3 vColor;
 
-    const init = () => {
-        scene = new THREE.Scene();
-        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 2000);
-        camera.position.z = 500;
+            void main() {
+                vec3 pos = position;
+                
+                // 計算與滑鼠距離
+                float dist = distance(pos.xy, uMouse);
+                
+                // 引力/斥力演算法
+                if(uPress > 0.5) {
+                    vec2 dir = normalize(pos.xy - uMouse);
+                    float force = (500.0 - min(dist, 500.0)) / 500.0;
+                    pos.xy -= dir * force * 15.0; // 強大吸引力
+                }
 
-        renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+                // 基礎流動動畫
+                pos.x += sin(uTime * 0.5 + pos.y * 0.01) * 2.0;
+                pos.y += cos(uTime * 0.5 + pos.x * 0.01) * 2.0;
 
-        geometry = new THREE.BufferGeometry();
-        positions = new Float32Array(particleCount * 3);
-        velocities = new Float32Array(particleCount * 3);
-        colors = new Float32Array(particleCount * 3);
+                vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+                gl_PointSize = aSize * (1000.0 / -mvPosition.z);
+                gl_Position = projectionMatrix * mvPosition;
 
-        const colorPool = [new THREE.Color(0x00f3ff), new THREE.Color(0x7000ff), new THREE.Color(0xffffff)];
+                // 顏色隨位置動態變化 (紫到青)
+                vColor = mix(vec3(0.74, 0.07, 1.0), vec3(0.0, 0.95, 1.0), sin(pos.x * 0.005) * 0.5 + 0.5);
+            }
+        `;
 
-        for (let i = 0; i < particleCount; i++) {
-            positions[i * 3] = (Math.random() - 0.5) * 1500;
-            positions[i * 3 + 1] = (Math.random() - 0.5) * 1500;
-            positions[i * 3 + 2] = (Math.random() - 0.5) * 1000;
+        const _FS = `
+            varying vec3 vColor;
+            void main() {
+                float d = distance(gl_PointCoord, vec2(0.5));
+                if(d > 0.5) discard;
+                gl_FragColor = vec4(vColor, 0.8 * (0.5 - d));
+            }
+        `;
 
-            const c = colorPool[Math.floor(Math.random() * colorPool.length)];
-            colors[i * 3] = c.r;
-            colors[i * 3 + 1] = c.g;
-            colors[i * 3 + 2] = c.b;
-        }
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 3000);
+            camera.position.z = 800;
 
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('container').appendChild(renderer.domElement);
 
-        const material = new THREE.PointsMaterial({
-            size: 1.0,
-            vertexColors: true,
-            blending: THREE.AdditiveBlending,
-            transparent: true,
-            opacity: 0.6,
-            depthWrite: false
-        });
-
-        points = new THREE.Points(geometry, material);
-        scene.add(points);
-
-        setupListeners();
-    };
-
-    const setupListeners = () => {
-        const boot = document.getElementById('boot-layer');
-        boot.onclick = () => {
-            boot.style.opacity = 0;
-            setTimeout(() => boot.remove(), 1000);
-            if (navigator.vibrate) navigator.vibrate([50, 30, 100]);
-            animate();
-        };
-
-        const updateTouches = (e) => {
-            e.preventDefault();
-            const rawTouches = e.touches ? Array.from(e.touches) : [e];
-            touches = rawTouches.map(t => {
-                const x = (t.clientX / window.innerWidth) * 2 - 1;
-                const y = -(t.clientY / window.innerHeight) * 2 + 1;
-                const vec = new THREE.Vector3(x, y, 0.5).unproject(camera);
-                const dir = vec.sub(camera.position).normalize();
-                return camera.position.clone().add(dir.multiplyScalar(-camera.position.z / dir.z));
-            });
-        };
-
-        window.addEventListener('mousedown', (e) => { isPressing = true; updateTouches(e); });
-        window.addEventListener('touchstart', (e) => { isPressing = true; updateTouches(e); });
-        window.addEventListener('mousemove', updateTouches);
-        window.addEventListener('touchmove', updateTouches);
-        
-        window.addEventListener('mouseup', () => explode());
-        window.addEventListener('touchend', () => explode());
-    };
-
-    const explode = () => {
-        isPressing = false;
-        // 超新星爆炸觸覺反饋
-        if (navigator.vibrate) navigator.vibrate([10, 50, 10, 100]);
-        // 給予所有粒子向外的衝力
-        const pos = geometry.attributes.position.array;
-        for (let i = 0; i < particleCount; i++) {
-            velocities[i * 3] *= -5;
-            velocities[i * 3 + 1] *= -5;
-        }
-    };
-
-    const animate = () => {
-        requestAnimationFrame(animate);
-        const posAttr = geometry.attributes.position;
-        const pos = posAttr.array;
-
-        for (let i = 0; i < particleCount; i++) {
-            const i3 = i * 3;
+            geometry = new THREE.BufferGeometry();
+            const pos = new Float32Array(particleCount * 3);
+            const sizes = new Float32Array(particleCount);
             
-            if (isPressing && touches.length > 0) {
-                // 多指引力場
-                touches.forEach(t => {
-                    const dx = t.x - pos[i3];
-                    const dy = t.y - pos[i3 + 1];
-                    const dist = Math.sqrt(dx*dx + dy*dy);
-                    if (dist < 600) {
-                        const force = (1 - dist / 600) * 0.8;
-                        velocities[i3] += dx * force * 0.02;
-                        velocities[i3 + 1] += dy * force * 0.02;
-                    }
-                });
-                velocities[i3] *= 0.92;
-                velocities[i3 + 1] *= 0.92;
-            } else {
-                velocities[i3] *= 0.98;
-                velocities[i3 + 1] *= 0.98;
+            for (let i = 0; i < particleCount; i++) {
+                pos[i * 3] = (Math.random() - 0.5) * 2000;
+                pos[i * 3 + 1] = (Math.random() - 0.5) * 2000;
+                pos[i * 3 + 2] = (Math.random() - 0.5) * 500;
+                sizes[i] = Math.random() * 2.0 + 0.5;
             }
 
-            pos[i3] += velocities[i3];
-            pos[i3 + 1] += velocities[i3 + 1];
+            geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
 
-            // 隨機動能，防止粒子死掉
-            pos[i3] += (Math.random() - 0.5) * 0.2;
-            pos[i3 + 1] += (Math.random() - 0.5) * 0.2;
+            material = new THREE.ShaderMaterial({
+                uniforms: {
+                    uTime: { value: 0 },
+                    uMouse: { value: new THREE.Vector2(0, 0) },
+                    uPress: { value: 0 }
+                },
+                vertexShader: _VS,
+                fragmentShader: _FS,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            points = new THREE.Points(geometry, material);
+            scene.add(points);
+
+            // 事件監聽
+            window.addEventListener('pointermove', e => {
+                targetMouse.x = e.clientX - window.innerWidth / 2;
+                targetMouse.y = -(e.clientY - window.innerHeight / 2);
+            });
+            window.addEventListener('pointerdown', () => { 
+                isPressing = true;
+                if(navigator.vibrate) navigator.vibrate(50); // 強烈震動
+            });
+            window.addEventListener('pointerup', () => isPressing = false);
+            window.addEventListener('resize', onResize);
         }
 
-        posAttr.needsUpdate = true;
-
-        // 鏡頭震盪特效
-        if (isPressing) {
-            camera.position.x += (Math.random() - 0.5) * 4;
-            camera.position.y += (Math.random() - 0.5) * 4;
-            if (Math.random() > 0.9 && navigator.vibrate) navigator.vibrate(5);
-        } else {
-            camera.position.x *= 0.9;
-            camera.position.y *= 0.9;
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        renderer.render(scene, camera);
-    };
+        function animate(time) {
+            requestAnimationFrame(animate);
+            
+            // 平滑跟隨滑鼠
+            mouse.lerp(targetMouse, 0.1);
+            
+            material.uniforms.uTime.value = time * 0.002;
+            material.uniforms.uMouse.value.copy(mouse);
+            material.uniforms.uPress.value = isPressing ? 1.0 : 0.0;
 
-    init();
-</script>
+            // 隨機抖動：增加電影感
+            if(isPressing) {
+                camera.position.x += (Math.random() - 0.5) * 5;
+                camera.position.y += (Math.random() - 0.5) * 5;
+            } else {
+                camera.position.x *= 0.95;
+                camera.position.y *= 0.95;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        init();
+        animate(0);
+    </script>
 </body>
 </html>
