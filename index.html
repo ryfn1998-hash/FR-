@@ -3,133 +3,127 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ULTRA-TECH INITIALIZATION</title>
+    <title>MULTI-TOUCH QUANTUM FIELD</title>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; touch-action: none; font-family: 'Courier New', monospace; }
-        canvas { display: block; }
+        body { margin: 0; background: #000; overflow: hidden; touch-action: none; }
+        canvas { display: block; filter: contrast(1.2) bloom(1.5); }
         
-        /* 啟動提示 */
-        #boot-hint {
-            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            color: #00f3ff; letter-spacing: 8px; font-size: 12px;
-            opacity: 0.4; pointer-events: none; animation: pulse 2s infinite;
-        }
-        @keyframes pulse { 0%, 100% { opacity: 0.1; } 50% { opacity: 0.5; } }
-
-        /* 螢幕震動與濾鏡特效 */
-        .shake { animation: screen-shake 0.2s cubic-bezier(.36,.07,.19,.97) both; }
-        @keyframes screen-shake {
-            10%, 90% { transform: translate3d(-1px, 0, 0); }
-            20%, 80% { transform: translate3d(2px, 0, 0); }
-            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
-            40%, 60% { transform: translate3d(4px, 0, 0); }
+        /* 電影感 HUD 文字 */
+        #hud {
+            position: fixed; top: 20px; left: 20px;
+            color: #00f3ff; font-family: 'Courier New', monospace;
+            font-size: 10px; pointer-events: none; letter-spacing: 2px;
+            text-shadow: 0 0 5px #00f3ff;
         }
     </style>
 </head>
 <body>
 
-<div id="boot-hint">TOUCH TO INITIALIZE CORE</div>
-<div id="app"></div>
+<div id="hud">SYSTEM: MULTI-TOUCH ACTIVE // PARTICLES: 15,000</div>
+<canvas id="canvas"></canvas>
 
-<script type="module">
-    import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+    let particles = [];
+    let touches = []; // 存儲多個觸控點
 
-    let scene, camera, renderer, material, mesh;
-    const hint = document.getElementById('boot-hint');
+    const PARTICLE_COUNT = 15000; // 粒子數量
+    const COLORS = ['#00f3ff', '#0077ff', '#ffffff', '#5500ff'];
 
-    // 極致震撼的「量子光波」著色器
-    const vertexShader = `
-        varying vec2 vUv;
-        void main() { vUv = uv; gl_Position = vec4(position, 1.0); }
-    `;
-
-    const fragmentShader = `
-        precision highp float;
-        uniform float iTime;
-        uniform vec2 iResolution;
-        uniform vec2 iMouse;
-        uniform float iImpact; // 衝擊波強度
-        varying vec2 vUv;
-
-        void main() {
-            vec2 uv = (gl_FragCoord.xy - 0.5 * iResolution.xy) / min(iResolution.y, iResolution.x);
-            vec2 m = (iMouse.xy - 0.5 * iResolution.xy) / min(iResolution.y, iResolution.x);
-            
-            float dist = length(uv - m);
-            
-            // 漸層光波計算
-            float wave = sin(dist * 20.0 - iTime * 5.0 + iImpact) * 0.5 + 0.5;
-            float strength = iImpact / (dist * 10.0 + 1.0);
-            
-            vec3 color1 = vec3(0.0, 0.95, 1.0); // 電信藍
-            vec3 color2 = vec3(0.5, 0.0, 1.0); // 神秘紫
-            vec3 finalColor = mix(color1, color2, wave) * strength;
-            
-            // 加入掃描線感
-            finalColor *= 0.8 + 0.2 * sin(gl_FragCoord.y * 1.5);
-            
-            gl_FragColor = vec4(finalColor, iImpact);
+    class Particle {
+        constructor() {
+            this.init();
         }
-    `;
+        init() {
+            this.x = Math.random() * width;
+            this.y = Math.random() * height;
+            this.vx = (Math.random() - 0.5) * 2;
+            this.vy = (Math.random() - 0.5) * 2;
+            this.size = Math.random() * 1.5 + 0.5;
+            this.color = COLORS[Math.floor(Math.random() * COLORS.length)];
+            this.accel = 0.05;
+        }
+        update() {
+            // 對於每一個觸控點產生引力
+            touches.forEach(t => {
+                const dx = t.x - this.x;
+                const dy = t.y - this.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 300) {
+                    const force = (300 - dist) / 300;
+                    this.vx += (dx / dist) * force * 0.8;
+                    this.vy += (dy / dist) * force * 0.8;
+                }
+            });
 
-    function init() {
-        scene = new THREE.Scene();
-        camera = new THREE.Camera();
-        renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.getElementById('app').appendChild(renderer.domElement);
+            this.vx *= 0.95; // 阻尼
+            this.vy *= 0.95;
+            this.x += this.vx;
+            this.y += this.vy;
 
-        const geometry = new THREE.PlaneGeometry(2, 2);
-        material = new THREE.ShaderMaterial({
-            uniforms: {
-                iTime: { value: 0 },
-                iResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
-                iMouse: { value: new THREE.Vector2(-1000, -1000) },
-                iImpact: { value: 0.0 }
-            },
-            vertexShader,
-            fragmentShader,
-            transparent: true
-        });
-
-        mesh = new THREE.Mesh(geometry, material);
-        scene.add(mesh);
-
-        // 監聽啟動
-        window.addEventListener('touchstart', (e) => triggerImpact(e.touches[0].clientX, e.touches[0].clientY), false);
-        window.addEventListener('mousedown', (e) => triggerImpact(e.clientX, e.clientY), false);
+            // 邊界回彈
+            if (this.x < 0 || this.x > width) this.vx *= -1;
+            if (this.y < 0 || this.y > height) this.vy *= -1;
+        }
+        draw() {
+            ctx.fillStyle = this.color;
+            ctx.fillRect(this.x, this.y, this.size, this.size);
+        }
     }
 
-    function triggerImpact(x, y) {
-        // 1. 隱藏提示
-        hint.style.display = 'none';
-
-        // 2. 物理反饋：觸覺震動 (震撼感核心)
-        if (navigator.vibrate) {
-            // 模擬強烈電力脈衝震動：強-停-弱
-            navigator.vibrate([100, 30, 200, 50, 50]);
-        }
-
-        // 3. 視覺反饋：位置與衝擊
-        material.uniforms.iMouse.value.set(x, window.innerHeight - y);
-        material.uniforms.iImpact.value = 5.0; // 瞬間最大能量
-
-        // 4. 電影感：螢幕抖動
-        document.body.classList.add('shake');
-        setTimeout(() => document.body.classList.remove('shake'), 200);
+    function resize() {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
     }
 
-    function animate(time) {
-        material.uniforms.iTime.value = time * 0.001;
-        // 能量隨時間衰減，達成緩緩消失的效果
-        material.uniforms.iImpact.value *= 0.95; 
+    function createParticles() {
+        particles = [];
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+            particles.push(new Particle());
+        }
+    }
+
+    // 觸控與震動邏輯
+    function handleTouches(e) {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        touches = Array.from(e.touches).map(t => ({
+            x: t.clientX - rect.left,
+            y: t.clientY - rect.top
+        }));
         
-        renderer.render(scene, camera);
+        // 每當多點觸控發生，產生強烈脈衝震動
+        if (navigator.vibrate && touches.length > 0) {
+            navigator.vibrate(15); 
+        }
+    }
+
+    window.addEventListener('touchstart', handleTouches);
+    window.addEventListener('touchmove', handleTouches);
+    window.addEventListener('touchend', (e) => touches = []); // 手指離開，力場消失
+
+    function animate() {
+        // 殘影效果：這就是「高質感漸層光波」的秘密
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        ctx.fillRect(0, 0, width, height);
+
+        particles.forEach(p => {
+            p.update();
+            p.draw();
+        });
         requestAnimationFrame(animate);
     }
 
-    init();
-    animate(0);
+    window.addEventListener('resize', () => {
+        resize();
+        createParticles();
+    });
+
+    resize();
+    createParticles();
+    animate();
 </script>
 </body>
 </html>
