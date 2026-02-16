@@ -3,162 +3,167 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FR QUANTUM TERMINAL</title>
+    <title>FR QUANTUM TERMINAL 2.0 - RAINBOW</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; overflow: hidden; touch-action: none; user-select: none; }
-        body { background-color: #000; height: 100vh; width: 100vw; cursor: crosshair; }
-        
-        /* 初始啟動層：全黑 */
-        #init-layer {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000; z-index: 100; cursor: pointer;
-            display: flex; justify-content: center; align-items: center;
-            transition: opacity 1.5s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
+        body { background-color: #000; height: 100vh; width: 100vw; }
+        #init-overlay { position: fixed; inset: 0; background: #000; z-index: 100; cursor: pointer; transition: opacity 1.2s ease-out; }
         #hud {
-            position: fixed; top: 30px; left: 30px;
-            color: rgba(188, 19, 254, 0.5);
-            font-family: 'Segoe UI', system-ui, sans-serif;
-            font-size: 10px; font-weight: 300; letter-spacing: 4px;
-            pointer-events: none; z-index: 10;
-            text-transform: uppercase;
-            opacity: 0; transition: opacity 2s;
+            position: fixed; top: 30px; left: 30px; z-index: 10;
+            color: rgba(255, 255, 255, 0.4); font-family: monospace; font-size: 10px;
+            letter-spacing: 3px; text-transform: uppercase;
+            opacity: 0; transition: opacity 2s; pointer-events: none;
         }
-
-        canvas { position: fixed; top: 0; left: 0; z-index: 1; opacity: 0; transition: opacity 2s; }
+        canvas { position: fixed; inset: 0; z-index: 1; opacity: 0; transition: opacity 2s; }
     </style>
 </head>
 <body>
-    <div id="init-layer"></div>
-    <div id="hud">Core Status: Active // Particles: 300,000 // Haptic: Synced</div>
+    <div id="init-overlay"></div>
+    <div id="hud">FR_CORE_v2 // SPECTRUM: RANDOM // COUNT: 500,000</div>
     <div id="container"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
-        let scene, camera, renderer, geometry, material, points;
-        const particleCount = 300000;
+        let scene, camera, renderer, points, geometry, material;
+        const PARTICLE_COUNT = 500000; 
         let mouse = new THREE.Vector2(-1000, -1000);
-        let targetMouse = new THREE.Vector2(-1000, -1000);
         let isPressing = false;
-        let isInitialized = false;
+        let isStarted = false;
 
-        const vertexShader = `
+        const _VS = `
             uniform float uTime;
             uniform vec2 uMouse;
             uniform float uPress;
             attribute float aSize;
             attribute vec3 aOffset;
+            attribute vec3 aColor; // 接收隨機顏色屬性
             varying vec3 vColor;
-            varying float vAlpha;
 
             void main() {
                 vec3 pos = position;
-                pos.x += sin(uTime * 0.4 + aOffset.x) * 10.0;
-                pos.y += cos(uTime * 0.4 + aOffset.y) * 10.0;
+                
+                // 隨機擾動流動
+                pos.x += sin(uTime * 0.4 + aOffset.x) * 8.0;
+                pos.y += cos(uTime * 0.4 + aOffset.y) * 8.0;
 
                 float dist = distance(pos.xy, uMouse);
+                
+                // 吸引力邏輯
                 if(uPress > 0.5 && dist < 600.0) {
-                    float force = pow(1.0 - (dist / 600.0), 2.5);
-                    pos.xy = mix(pos.xy, uMouse, force * 0.2);
-                    pos.z += force * 200.0;
+                    float force = pow(1.0 - (dist / 600.0), 3.0);
+                    pos.xy = mix(pos.xy, uMouse, force * 0.25);
+                    pos.z += force * 150.0;
                 }
 
                 vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-                gl_PointSize = aSize * (850.0 / -mvPosition.z);
+                gl_PointSize = aSize * (1100.0 / -mvPosition.z);
                 gl_Position = projectionMatrix * mvPosition;
 
-                float colorMix = sin(uTime * 0.3 + pos.x * 0.002) * 0.5 + 0.5;
-                vColor = mix(vec3(0.74, 0.07, 1.0), vec3(0.0, 0.95, 1.0), colorMix);
-                vAlpha = 1.0 - (dist / 1500.0);
+                // 將隨機顏色傳遞給 Fragment Shader
+                vColor = aColor;
+                
+                // 如果長按，讓中心顏色更亮更白
+                if(uPress > 0.5 && dist < 100.0) {
+                    vColor = mix(vColor, vec3(1.0, 1.0, 1.0), (1.0 - dist/100.0));
+                }
             }
         `;
 
-        const fragmentShader = `
+        const _FS = `
             varying vec3 vColor;
-            varying float vAlpha;
             void main() {
                 float d = distance(gl_PointCoord, vec2(0.5));
                 if(d > 0.5) discard;
-                float strength = pow(1.0 - d*2.0, 2.5);
-                gl_FragColor = vec4(vColor, strength * vAlpha * 0.9);
+                float glow = pow(1.0 - d * 2.0, 2.2);
+                gl_FragColor = vec4(vColor, glow * 0.85);
             }
         `;
 
         function init() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 3000);
-            camera.position.z = 750;
+            camera.position.z = 850;
 
             renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
-            renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setSize(window.innerWidth, window.innerHeight);
             document.getElementById('container').appendChild(renderer.domElement);
 
             geometry = new THREE.BufferGeometry();
-            const pos = new Float32Array(particleCount * 3);
-            const offsets = new Float32Array(particleCount * 3);
-            const sizes = new Float32Array(particleCount);
-            
-            for (let i = 0; i < particleCount; i++) {
-                const r = 1200 * Math.sqrt(Math.random());
-                const theta = Math.random() * 2 * Math.PI;
-                const phi = Math.acos(2 * Math.random() - 1);
-                pos[i*3] = r * Math.sin(phi) * Math.cos(theta);
-                pos[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
-                pos[i*3+2] = (Math.random() - 0.5) * 500;
+            const pos = new Float32Array(PARTICLE_COUNT * 3);
+            const offsets = new Float32Array(PARTICLE_COUNT * 3);
+            const sizes = new Float32Array(PARTICLE_COUNT);
+            const colors = new Float32Array(PARTICLE_COUNT * 3); // 新增顏色 Buffer
+
+            const color = new THREE.Color();
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const radius = Math.random() * 1300;
+                pos[i*3] = Math.cos(angle) * radius;
+                pos[i*3+1] = Math.sin(angle) * radius;
+                pos[i*3+2] = (Math.random() - 0.5) * 400;
+
                 offsets[i*3] = Math.random() * 100;
-                offsets[i*3+1] = Math.random() * 100;
-                sizes[i] = Math.random() * 1.6 + 0.4;
+                sizes[i] = Math.random() * 1.5 + 0.5;
+
+                // 生成隨機 HSL 顏色，保證色彩鮮艷
+                color.setHSL(Math.random(), 0.8, 0.6);
+                colors[i*3] = color.r;
+                colors[i*3+1] = color.g;
+                colors[i*3+2] = color.b;
             }
 
             geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
             geometry.setAttribute('aOffset', new THREE.BufferAttribute(offsets, 3));
             geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+            geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
 
             material = new THREE.ShaderMaterial({
-                uniforms: { uTime: { value: 0 }, uMouse: { value: new THREE.Vector2(0, 0) }, uPress: { value: 0 } },
-                vertexShader, fragmentShader, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+                uniforms: {
+                    uTime: { value: 0 },
+                    uMouse: { value: new THREE.Vector2(0, 0) },
+                    uPress: { value: 0 }
+                },
+                vertexShader: _VS, fragmentShader: _FS,
+                transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
             });
 
             points = new THREE.Points(geometry, material);
             scene.add(points);
 
-            setupEvents();
+            setupInteraction();
         }
 
-        function setupEvents() {
-            const initLayer = document.getElementById('init-layer');
+        function setupInteraction() {
+            const overlay = document.getElementById('init-overlay');
             const hud = document.getElementById('hud');
-            const canvasEl = renderer.domElement;
+            const canvas = renderer.domElement;
 
-            const startSystem = (e) => {
-                if(!isInitialized) {
-                    isInitialized = true;
-                    initLayer.style.opacity = '0';
+            const start = (e) => {
+                if(!isStarted) {
+                    isStarted = true;
+                    overlay.style.opacity = '0';
                     hud.style.opacity = '1';
-                    canvasEl.style.opacity = '1';
-                    if(navigator.vibrate) navigator.vibrate([30, 50, 30]);
-                    setTimeout(() => initLayer.remove(), 1500);
+                    canvas.style.opacity = '1';
+                    if(navigator.vibrate) navigator.vibrate([20, 40, 20]);
+                    setTimeout(() => overlay.remove(), 1200);
                 }
                 isPressing = true;
-                handleMove(e);
+                move(e);
             };
 
-            const handleMove = (e) => {
+            const move = (e) => {
                 const x = e.touches ? e.touches[0].clientX : e.clientX;
                 const y = e.touches ? e.touches[0].clientY : e.clientY;
-                targetMouse.x = x - window.innerWidth / 2;
-                targetMouse.y = -(y - window.innerHeight / 2);
+                mouse.x = x - window.innerWidth / 2;
+                mouse.y = -(y - window.innerHeight / 2);
             };
 
-            window.addEventListener('pointerdown', startSystem);
-            window.addEventListener('pointermove', handleMove);
-            window.addEventListener('pointerup', () => {
-                isPressing = false;
-                if(isInitialized && navigator.vibrate) navigator.vibrate(10);
-            });
+            window.addEventListener('pointerdown', start);
+            window.addEventListener('pointermove', move);
+            window.addEventListener('pointerup', () => isPressing = false);
             window.addEventListener('resize', () => {
                 camera.aspect = window.innerWidth / window.innerHeight;
                 camera.updateProjectionMatrix();
@@ -168,23 +173,22 @@
 
         function animate(time) {
             requestAnimationFrame(animate);
-            if(!isInitialized) return;
+            if(!isStarted) return;
 
-            mouse.lerp(targetMouse, 0.1);
-            material.uniforms.uTime.value = time * 0.001;
-            material.uniforms.uMouse.value.copy(mouse);
+            material.uniforms.uTime.value = time * 0.0012;
+            material.uniforms.uMouse.value.lerp(mouse, 0.1);
             material.uniforms.uPress.value = isPressing ? 1.0 : 0.0;
 
             if(isPressing) {
-                camera.position.x += (Math.random() - 0.5) * 4;
-                camera.position.y += (Math.random() - 0.5) * 4;
-                if(Math.random() > 0.95 && navigator.vibrate) navigator.vibrate(5);
+                camera.position.x += (Math.random() - 0.5) * 6;
+                camera.position.y += (Math.random() - 0.5) * 6;
+                if(Math.random() > 0.9 && navigator.vibrate) navigator.vibrate(10);
             } else {
-                camera.position.x *= 0.95;
-                camera.position.y *= 0.95;
+                camera.position.x *= 0.92;
+                camera.position.y *= 0.92;
             }
 
-            points.rotation.y += 0.0008;
+            points.rotation.z += 0.0006;
             renderer.render(scene, camera);
         }
 
